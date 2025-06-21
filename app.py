@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-VERIFICATION_TOKEN = "sellpilot_prod_verification_token_92ZxhG3IqpV8yRjKLtA7e"  # שים כאן את הטוקן מאיביי
+VERIFICATION_TOKEN = "sellpilot_prod_verification_token_92ZxhG3lqpV8yRjKLtA7eXpJmFbNsWdHqC0UvYMtA9BrKw"  # שים כאן את הטוקן מאיביי
 
 @app.route("/notifications", methods=["GET"])
 def verify():
