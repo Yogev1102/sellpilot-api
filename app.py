@@ -3,44 +3,58 @@ from flask import Flask, request, jsonify
 app = Flask(__name__)
 
 # וודא שהטוקן הזה זהה לחלוטין לטוקן שמופיע לך בממשק המשתמש של eBay
+# שימו לב: אורך הטוקן ש-eBay שולחת ב-GET הוא שונה מהטוקן שמוצג בצילום מסך המקורי.
+# יש לוודא שהטוקן ב-VERIFICATION_TOKEN הוא בדיוק הטוקן ש-eBay מצפה לו באימות (כלומר, הטוקן הארוך שמסתיים ב-KW)
+# אם eBay שולחת טוקן קצר ב-GET, זה אומר שהטוקן שאתה מגדיר בקוד צריך להיות דווקא הקצר.
+# אבל על פי הצילום מסך, זה היה הטוקן הארוך: sellpilot_prod_verification_token_92ZxhG3lqpV8yRjKLtA7eXpJmFbNsWdHqC0UvYMtA9BrKw
+# בוא נניח שהטוקן הארוך הוא הנכון לאימות הסופי, ושהטוקן הקצר הוא רק לצורך הבדיקה הראשונית שהם עושים ב-GET.
+# אם זה לא עובד, נצטרך לבדוק מה eBay באמת מצפה שיוחזר.
 VERIFICATION_TOKEN = "sellpilot_prod_verification_token_92ZxhG3lqpV8yRjKLtA7eXpJmFbNsWdHqC0UvYMtA9BrKw"
 
-@app.route("/notifications", methods=["POST"]) # שינוי ל-POST
+@app.route("/notifications", methods=["GET", "POST"]) # עכשיו מטפל גם ב-GET וגם ב-POST
 def handle_ebay_notification():
-    # 1. בדוק שהבקשה היא POST
-    if request.method == "POST":
-        # 2. נסה לפרסר את גוף הבקשה כ-JSON
+    if request.method == "GET":
+        # זה נראה שבקשות האימות של eBay מגיעות כ-GET עם challenge_code בפרמטרים
+        challenge_code = request.args.get("challenge_code")
+        
+        if challenge_code:
+            print(f"Received GET verification request with challenge_code: {challenge_code}")
+            # eBay מצפה שתחזיר את אותו challenge_code שקיבלת,
+            # אבל במפתח challengeResponse (לפי התיעוד הכללי של Webhooks)
+            # יש גם אפשרות שהם מצפים לטוקן שהוגדר ב-UI. ננסה את מה שקיבלנו.
+            return jsonify({"challengeResponse": challenge_code}), 200
+        else:
+            # אם אין challenge_code ב-GET, זו אולי גישה ישירה לדפדפן או משהו לא צפוי
+            print("Received GET request without challenge_code.")
+            return "GET request received, but no challenge_code provided.", 200 # או 400
+
+    elif request.method == "POST":
+        # זה יהיה עבור הודעות אירועים רגילות ש-eBay תשלח בעתיד
         try:
             data = request.get_json()
-            if data is None: # אם ה-body לא JSON, נסה אולי form data
+            if data is None:
+                # אם זה לא JSON, נסה לראות אם זה x-www-form-urlencoded
                 data = request.form
+            print(f"Received POST request with data: {data}")
+
+            # בדוק אם יש גם challengeCode ב-POST (למקרה ש-eBay שולחת ככה אימות)
+            challenge_code_from_post = data.get("challengeCode")
+            if challenge_code_from_post:
+                print(f"Received POST verification request with challengeCode: {challenge_code_from_post}")
+                return jsonify({"challengeResponse": challenge_code_from_post}), 200
+            else:
+                # לוגיקה לטיפול בהודעות אירועים רגילות מ-eBay
+                # לדוגמה: print(data['metadata']['topic'])
+                return "POST notification received and processed.", 200 # או 204 No Content
+
         except Exception as e:
-            # אם יש שגיאה בפירסור JSON, כנראה שהבקשה לא בפורמט הנכון
-            print(f"Error parsing JSON: {e}")
-            return "Bad Request: Invalid JSON", 400
+            print(f"Error processing POST request: {e}")
+            return "Error processing POST request", 400
 
-        # 3. חפש את ה-challengeCode בנתונים שהתקבלו
-        # לפי התיעוד של eBay, זה אמור להגיע כ-challengeCode
-        challenge_code_from_ebay = data.get("challengeCode")
-
-        if challenge_code_from_ebay:
-            # 4. אם קיבלנו challengeCode, נחזיר אותו חזרה בפורמט הנדרש
-            # eBay מצפה ל-challengeResponse באותה בקשה לאימות
-            return jsonify({"challengeResponse": challenge_code_from_ebay}), 200
-        else:
-            # 5. אם לא קיבלנו challengeCode, זה יכול להיות הודעת אירוע רגילה מ-eBay
-            # או בקשת אימות שגויה. במקרה כזה, כדאי לטפל באירועים
-            # או להחזיר שגיאה אם זה לא אימות.
-            print("Received a POST request without challengeCode. This might be a regular event notification.")
-            # כאן תוכל להוסיף לוגיקה לטיפול בהודעות אירוע אחרות מ-eBay
-            return "OK", 200 # או 204 No Content
-
-    # אם הבקשה אינה POST (למרות שהגדרנו רק POST ב-decorator, זה קוד הגנה)
+# זה לא אמור לקרות אם הגדרת methods=["GET", "POST"]
     return "Method Not Allowed", 405
 
 if __name__ == "__main__":
-    # ב-Render, הפורט מוגדר על ידי משתנה סביבה.
-    # חשוב להשתמש בו כדי שהאפליקציה תקשיב לפורט הנכון.
     import os
-    port = int(os.environ.get("PORT", 5000)) # 5000 הוא ברירת מחדל אם PORT לא מוגדר
-    app.run(host="0.0.0.0", port=port) # חשוב להקשיב ל-0.0.0.0
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
