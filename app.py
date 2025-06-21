@@ -2,12 +2,10 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-@app.route("/notifications", methods=["GET", "POST"])
-def ebay_verification():
+@app.route("/notifications", methods=["GET"])
+def verify():
     challenge_code = request.args.get("challenge_code")
-    if challenge_code:
-        return jsonify({"challengeResponse": challenge_code}), 200
-    return "OK", 200  # במקרה של POST רגיל
+    return jsonify({"challengeResponse": challenge_code}), 200
 
 if __name__ == "__main__":
     app.run()
